@@ -36,6 +36,7 @@
         
         input[type="number"] {
             -moz-appearance: textfield;
+            appearance: textfield;
         }
     </style>
 </head>
@@ -56,11 +57,25 @@
         ];
 
         const MEDICARE_LEVY = 0.02;
+        const MEDICARE_LEVY_LOW_INCOME_THRESHOLD = 24276; // 2024-25 single threshold
+        const MEDICARE_LEVY_SHADE_IN_THRESHOLD = 30348; // 2024-25 single shade-in threshold
         const SUPER_RATE = 0.12; // 12% from 1 July 2025
+
+        const calculateMedicareLevy = (income) => {
+            if (income <= MEDICARE_LEVY_LOW_INCOME_THRESHOLD) {
+                return 0; // No Medicare levy for low income earners
+            } else if (income <= MEDICARE_LEVY_SHADE_IN_THRESHOLD) {
+                // Shade-in rate: 10% of the excess over low income threshold
+                return (income - MEDICARE_LEVY_LOW_INCOME_THRESHOLD) * 0.10;
+            } else {
+                // Full 2% Medicare levy
+                return income * MEDICARE_LEVY;
+            }
+        };
 
         const calculateTax = (income) => {
             for (let bracket of TAX_BRACKETS_2025) {
-                if (income <= bracket.max) {
+                if (income >= bracket.min && income <= bracket.max) {
                     return bracket.base + (income - bracket.min) * bracket.rate;
                 }
             }
@@ -74,7 +89,7 @@
             
             // Calculate tax on base salary
             const tax = calculateTax(grossAnnual);
-            const medicare = grossAnnual * MEDICARE_LEVY;
+            const medicare = calculateMedicareLevy(grossAnnual);
             const hecsRepayment = hecsDebt > 0 ? calculateHECS(grossAnnual) : 0;
             const super_contrib = includeSuper ? grossAnnual * SUPER_RATE : 0;
             
@@ -83,7 +98,8 @@
             if (bonus > 0) {
                 const taxWithBonus = calculateTax(grossAnnual + bonus);
                 const bonusTax = taxWithBonus - tax;
-                const bonusMedicare = bonus * MEDICARE_LEVY;
+                const medicareWithBonus = calculateMedicareLevy(grossAnnual + bonus);
+                const bonusMedicare = medicareWithBonus - medicare;
                 bonusAfterTax = bonus - bonusTax - bonusMedicare;
             }
             
@@ -112,7 +128,7 @@
             // Marginal rates apply only to income above threshold
             const incomeAboveThreshold = income - 67000;
             
-            if (income < 125000) {
+            if (income <= 125000) {
                 // 15% marginal rate on income above $67,000
                 return incomeAboveThreshold * 0.15;
             } else {
@@ -124,6 +140,28 @@
         // Main App Component
         const App = () => {
             const [activeTab, setActiveTab] = useState('basic');
+            const [showAbout, setShowAbout] = useState(false);
+            const [showPrivacy, setShowPrivacy] = useState(false);
+            const [showTerms, setShowTerms] = useState(false);
+            const [showContact, setShowContact] = useState(false);
+            const [cookieConsent, setCookieConsent] = useState(localStorage.getItem('cookieConsent') === 'accepted');
+            
+            // Listen for footer link clicks
+            useEffect(() => {
+                const handleOpenPrivacy = () => setShowPrivacy(true);
+                const handleOpenTerms = () => setShowTerms(true);
+                const handleOpenContact = () => setShowContact(true);
+                
+                window.addEventListener('react-open-privacy', handleOpenPrivacy);
+                window.addEventListener('react-open-terms', handleOpenTerms);
+                window.addEventListener('react-open-contact', handleOpenContact);
+                
+                return () => {
+                    window.removeEventListener('react-open-privacy', handleOpenPrivacy);
+                    window.removeEventListener('react-open-terms', handleOpenTerms);
+                    window.removeEventListener('react-open-contact', handleOpenContact);
+                };
+            }, []);
             
             return (
                 <div className="min-h-screen">
@@ -138,16 +176,113 @@
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-4">
-                                    <button className="text-gray-600 hover:text-gray-900 text-sm font-medium">
+                                    <button 
+                                        onClick={() => setShowAbout(true)}
+                                        className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                                    >
                                         About
                                     </button>
-                                    <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">
-                                        Sign Up
+                                    <button 
+                                        onClick={() => setShowContact(true)}
+                                        className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                                    >
+                                        Contact
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </header>
+
+                    {/* About Modal */}
+                    {showAbout && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setShowAbout(false)}>
+                            <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                <div className="p-6 sm:p-8">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-2xl font-bold text-gray-900">About Australia Pay Calculator</h2>
+                                        <button 
+                                            onClick={() => setShowAbout(false)}
+                                            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="space-y-6 text-gray-700">
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">What is this?</h3>
+                                            <p className="leading-relaxed">
+                                                Australia Pay Calculator is a free, comprehensive tool to help Australian workers understand their take-home pay, 
+                                                tax obligations, and employment entitlements. Calculate your net salary, redundancy packages, salary sacrifice benefits, 
+                                                raise impacts, job offer comparisons, and childcare subsidies.
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Features</h3>
+                                            <ul className="list-disc list-inside space-y-2 leading-relaxed">
+                                                <li><strong>Pay Calculator:</strong> Calculate your take-home pay with accurate tax, Medicare levy, and HECS/HELP deductions</li>
+                                                <li><strong>Redundancy Calculator:</strong> Estimate redundancy packages based on Fair Work NES standards</li>
+                                                <li><strong>Salary Sacrifice:</strong> See how much you can save by sacrificing into superannuation</li>
+                                                <li><strong>Raise Impact:</strong> Understand how much of your raise you'll actually take home</li>
+                                                <li><strong>Compare Offers:</strong> Compare job offers including commute costs and total package value</li>
+                                                <li><strong>Childcare Subsidy:</strong> Estimate your childcare subsidy entitlement</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Tax Information</h3>
+                                            <p className="leading-relaxed">
+                                                All calculations are based on the <strong>2024-25 financial year</strong> tax rates and thresholds, including:
+                                            </p>
+                                            <ul className="list-disc list-inside space-y-2 mt-2 leading-relaxed">
+                                                <li>ATO tax brackets with Stage 3 tax cuts</li>
+                                                <li>Medicare levy with low-income thresholds</li>
+                                                <li>2025-26 HECS/HELP marginal repayment system</li>
+                                                <li>Fair Work National Employment Standards for redundancy</li>
+                                                <li>Current superannuation rate (12% from 1 July 2025)</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Important Disclaimer</h3>
+                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                                <p className="text-sm text-amber-800 leading-relaxed">
+                                                    This calculator provides <strong>estimates only</strong> and should not be considered financial or legal advice. 
+                                                    Tax calculations depend on your individual circumstances. Redundancy and employment entitlements vary by 
+                                                    award, enterprise agreement, and employment contract. Always consult the ATO, Fair Work, or a qualified 
+                                                    professional for advice specific to your situation.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Data & Privacy</h3>
+                                            <p className="leading-relaxed">
+                                                All calculations are performed locally in your browser. No data is sent to any server or stored anywhere. 
+                                                Your privacy is completely protected.
+                                            </p>
+                                        </div>
+
+                                        <div className="pt-4 border-t border-gray-200">
+                                            <p className="text-sm text-gray-500">
+                                                Made with ❤️ for Australian workers • Updated November 2025
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 flex justify-end">
+                                        <button 
+                                            onClick={() => setShowAbout(false)}
+                                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Navigation Tabs */}
                     <div className="bg-white border-b border-gray-200">
@@ -177,6 +312,222 @@
                             </nav>
                         </div>
                     </div>
+
+                    {/* Privacy Policy Modal */}
+                    {showPrivacy && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setShowPrivacy(false)}>
+                            <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                <div className="p-6 sm:p-8">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-2xl font-bold text-gray-900">Privacy Policy</h2>
+                                        <button onClick={() => setShowPrivacy(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+                                    </div>
+                                    <div className="space-y-6 text-gray-700 text-sm leading-relaxed">
+                                        <p className="text-xs text-gray-500">Last updated: November 2025</p>
+                                        
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">1. Introduction</h3>
+                                            <p>Australia Pay Calculator ("we", "our", "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our website.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">2. Information We Collect</h3>
+                                            <p><strong>We do not collect, store, or transmit any personal information.</strong> All calculations are performed entirely in your web browser on your device. We do not use cookies, tracking pixels, or any other data collection methods.</p>
+                                            <p className="mt-2">The only data stored locally is:</p>
+                                            <ul className="list-disc list-inside mt-2 space-y-1">
+                                                <li>Cookie consent preference (stored in your browser's localStorage)</li>
+                                            </ul>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">3. Third-Party Services</h3>
+                                            <p>This website may display advertisements through Google AdSense. Google may use cookies and similar technologies to serve personalized ads based on your browsing history. You can opt out of personalized advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Google's Ad Settings</a>.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">4. Data Security</h3>
+                                            <p>Since we do not collect or store any personal data, there is no risk of data breaches or unauthorized access to your information through our service.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">5. Children's Privacy</h3>
+                                            <p>Our service is not directed to individuals under the age of 18. We do not knowingly collect information from children.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">6. Changes to This Policy</h3>
+                                            <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">7. Contact Us</h3>
+                                            <p>If you have questions about this Privacy Policy, please contact us through our <button onClick={() => {setShowPrivacy(false); setShowContact(true);}} className="text-indigo-600 hover:underline">Contact page</button>.</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex justify-end">
+                                        <button onClick={() => setShowPrivacy(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Terms of Service Modal */}
+                    {showTerms && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setShowTerms(false)}>
+                            <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                <div className="p-6 sm:p-8">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-2xl font-bold text-gray-900">Terms of Service</h2>
+                                        <button onClick={() => setShowTerms(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+                                    </div>
+                                    <div className="space-y-6 text-gray-700 text-sm leading-relaxed">
+                                        <p className="text-xs text-gray-500">Last updated: November 2025</p>
+                                        
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">1. Acceptance of Terms</h3>
+                                            <p>By accessing and using Australia Pay Calculator, you accept and agree to be bound by these Terms of Service. If you do not agree, please do not use this service.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">2. Use of Service</h3>
+                                            <p>This service is provided for informational and educational purposes only. You may use the calculator for personal, non-commercial purposes.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">3. Disclaimer of Financial Advice</h3>
+                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                                <p className="text-amber-800"><strong>IMPORTANT:</strong> This calculator provides estimates only and should not be considered financial, tax, or legal advice. All calculations are based on general tax rates and may not reflect your specific circumstances. Always consult with a qualified accountant, tax advisor, or the Australian Taxation Office (ATO) for advice specific to your situation.</p>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">4. Accuracy of Information</h3>
+                                            <p>While we strive to provide accurate calculations based on current ATO and Fair Work standards, we make no warranties about the accuracy, completeness, or suitability of the information provided. Tax rates and employment entitlements may change, and individual circumstances vary.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">5. Limitation of Liability</h3>
+                                            <p>To the fullest extent permitted by law, we disclaim all liability for any loss or damage arising from your use of this calculator. You use this service at your own risk.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">6. Intellectual Property</h3>
+                                            <p>The content, design, and functionality of this website are protected by copyright and other intellectual property laws. You may not reproduce, distribute, or create derivative works without permission.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">7. Third-Party Links</h3>
+                                            <p>Our website may contain links to third-party websites (such as ATO, Fair Work). We are not responsible for the content or practices of these external sites.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">8. Changes to Terms</h3>
+                                            <p>We reserve the right to modify these terms at any time. Continued use of the service after changes constitutes acceptance of the new terms.</p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">9. Contact</h3>
+                                            <p>For questions about these Terms, please contact us through our <button onClick={() => {setShowTerms(false); setShowContact(true);}} className="text-indigo-600 hover:underline">Contact page</button>.</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex justify-end">
+                                        <button onClick={() => setShowTerms(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Contact Modal */}
+                    {showContact && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setShowContact(false)}>
+                            <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+                                <div className="p-6 sm:p-8">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-2xl font-bold text-gray-900">Contact Us</h2>
+                                        <button onClick={() => setShowContact(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+                                    </div>
+                                    <div className="space-y-6 text-gray-700">
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Get in Touch</h3>
+                                            <p className="leading-relaxed">
+                                                We'd love to hear from you! Whether you have a question, found a bug, or have suggestions for improvement, please reach out.
+                                            </p>
+                                        </div>
+
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                            <p className="text-sm text-blue-800">
+                                                <strong>Note:</strong> For tax or legal advice, please consult the <a href="https://www.ato.gov.au" target="_blank" rel="noopener noreferrer" className="underline">Australian Taxation Office</a> or a qualified professional. 
+                                                For employment matters, contact <a href="https://www.fairwork.gov.au" target="_blank" rel="noopener noreferrer" className="underline">Fair Work Australia</a>.
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-3">Contact Information</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="font-medium text-gray-900">Email</p>
+                                                    <p className="text-gray-600">Please use the contact form on your hosting platform or email service provider.</p>
+                                                    <p className="text-sm text-gray-500 mt-1">(Replace this with your actual contact email)</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Response Time</h3>
+                                            <p className="leading-relaxed">We aim to respond to all inquiries within 2-3 business days.</p>
+                                        </div>
+
+                                        <div className="pt-4 border-t border-gray-200">
+                                            <p className="text-sm text-gray-500">
+                                                <strong>Privacy:</strong> Any information you provide will be used solely to respond to your inquiry. 
+                                                See our <button onClick={() => {setShowContact(false); setShowPrivacy(true);}} className="text-indigo-600 hover:underline">Privacy Policy</button> for more details.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex justify-end">
+                                        <button onClick={() => setShowContact(false)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Cookie Consent Banner */}
+                    {!cookieConsent && (
+                        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 z-40 shadow-lg">
+                            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex-1">
+                                    <p className="text-sm">
+                                        We use cookies to improve your experience and serve personalized ads. 
+                                        By continuing to use this site, you consent to our use of cookies. 
+                                        See our <button onClick={() => setShowPrivacy(true)} className="underline hover:text-gray-300">Privacy Policy</button> for details.
+                                    </p>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button 
+                                        onClick={() => {
+                                            localStorage.setItem('cookieConsent', 'accepted');
+                                            setCookieConsent(true);
+                                        }}
+                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Accept
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            localStorage.setItem('cookieConsent', 'declined');
+                                            setCookieConsent(true);
+                                        }}
+                                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Decline
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Main Content */}
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -220,9 +571,135 @@
                 }));
             };
 
+            const handleDownload = () => {
+                if (!result) return;
+                
+                // Helper function to escape CSV values (wrap in quotes if contains comma, quote, or newline)
+                const escapeCSV = (value) => {
+                    const str = String(value);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return `"${str.replace(/"/g, '""')}"`;
+                    }
+                    return str;
+                };
+                
+                // Format numbers without commas for CSV (Excel will format them)
+                const formatNumber = (num) => num.toFixed(2);
+                
+                // Create CSV content with proper escaping
+                const csvContent = [
+                    ['Australia Pay Calculator - Salary Breakdown'],
+                    [''],
+                    ['Tax Year', taxYear],
+                    [''],
+                    ['Income Details'],
+                    ['Gross Annual Salary', formatNumber(result.grossAnnual)],
+                    ['Gross Annual Salary (Formatted)', `$${result.grossAnnual.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ['Superannuation (12%)', formatNumber(result.grossAnnual * SUPER_RATE)],
+                    ['Superannuation (Formatted)', `$${(result.grossAnnual * SUPER_RATE).toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    [''],
+                    ['Deductions'],
+                    ['Income Tax', formatNumber(result.tax)],
+                    ['Income Tax (Formatted)', `$${result.tax.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ['Medicare Levy', formatNumber(result.medicare)],
+                    ['Medicare Levy (Formatted)', `$${result.medicare.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ...(result.hecsRepayment > 0 ? [
+                        ['HECS/HELP Repayment', formatNumber(result.hecsRepayment)],
+                        ['HECS/HELP Repayment (Formatted)', `$${result.hecsRepayment.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`]
+                    ] : []),
+                    ['Total Deductions', formatNumber(result.tax + result.medicare + result.hecsRepayment)],
+                    ['Total Deductions (Formatted)', `$${(result.tax + result.medicare + result.hecsRepayment).toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    [''],
+                    ['Take-Home Pay'],
+                    ['Weekly', formatNumber(result.netWeekly)],
+                    ['Weekly (Formatted)', `$${result.netWeekly.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ['Fortnightly', formatNumber(result.netFortnightly)],
+                    ['Fortnightly (Formatted)', `$${result.netFortnightly.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ['Monthly', formatNumber(result.netMonthly)],
+                    ['Monthly (Formatted)', `$${result.netMonthly.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    ['Annually', formatNumber(result.netAnnual)],
+                    ['Annually (Formatted)', `$${result.netAnnual.toLocaleString('en-AU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`],
+                    [''],
+                    ['Summary'],
+                    ['Effective Tax Rate', `${((result.tax + result.medicare + result.hecsRepayment) / result.grossAnnual * 100).toFixed(1)}%`],
+                    ['Take-Home Rate', `${(result.netAnnual / result.grossAnnual * 100).toFixed(1)}%`],
+                    [''],
+                    ['Generated on', new Date().toLocaleDateString('en-AU')],
+                    ['This is an estimate only and should not be considered financial advice.']
+                ].map(row => row.map(escapeCSV).join(',')).join('\n');
+
+                // Create blob and download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `australia-pay-calculator-${taxYear}-${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const handleShare = async () => {
+                if (!result) return;
+
+                const shareText = `Australia Pay Calculator Results (${taxYear}):
+                
+Gross Annual: $${result.grossAnnual.toLocaleString('en-AU', {maximumFractionDigits: 0})}
+Take-Home Annual: $${result.netAnnual.toLocaleString('en-AU', {maximumFractionDigits: 0})}
+Take-Home Weekly: $${result.netWeekly.toLocaleString('en-AU', {maximumFractionDigits: 0})}
+
+Tax: $${result.tax.toLocaleString('en-AU', {maximumFractionDigits: 0})}
+Medicare: $${result.medicare.toLocaleString('en-AU', {maximumFractionDigits: 0})}
+${result.hecsRepayment > 0 ? `HECS: $${result.hecsRepayment.toLocaleString('en-AU', {maximumFractionDigits: 0})}\n` : ''}
+Effective Tax Rate: ${((result.tax + result.medicare + result.hecsRepayment) / result.grossAnnual * 100).toFixed(1)}%
+
+Calculate your pay at: ${window.location.href}`;
+
+                // Try Web Share API first (mobile)
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: 'Australia Pay Calculator Results',
+                            text: shareText
+                        });
+                        return;
+                    } catch (err) {
+                        // User cancelled or error, fall through to clipboard
+                    }
+                }
+
+                // Fallback to clipboard
+                try {
+                    await navigator.clipboard.writeText(shareText);
+                    alert('Results copied to clipboard!');
+                } catch (err) {
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = shareText;
+                    textArea.style.position = 'fixed';
+                    textArea.style.opacity = '0';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        alert('Results copied to clipboard!');
+                    } catch (err) {
+                        alert('Unable to copy. Please copy manually.');
+                    }
+                    document.body.removeChild(textArea);
+                }
+            };
+
             useEffect(() => {
-                if (salary) {
+                if (salary && !isNaN(parseFloat(salary)) && parseFloat(salary) > 0) {
                     let annualSalary = parseFloat(salary);
+                    
+                    // Validate input
+                    if (isNaN(annualSalary) || annualSalary <= 0) {
+                        setResult(null);
+                        return;
+                    }
                     
                     // Convert to annual based on frequency
                     if (payFrequency === 'monthly') {
@@ -232,8 +709,14 @@
                     } else if (payFrequency === 'weekly') {
                         annualSalary = annualSalary * 52;
                     } else if (payFrequency === 'hourly') {
-                        const weeklyHours = parseFloat(hoursPerWeek) || 38;
+                        const weeklyHours = Math.max(parseFloat(hoursPerWeek) || 38, 1); // Prevent division by zero
                         annualSalary = annualSalary * weeklyHours * 52;
+                    }
+                    
+                    // Validate after conversion
+                    if (isNaN(annualSalary) || annualSalary <= 0) {
+                        setResult(null);
+                        return;
                     }
                     
                     // If salary includes super, extract it first
@@ -243,23 +726,32 @@
                     
                     // Calculate part-time adjustment
                     if (isPartTime && payFrequency !== 'hourly') {
-                        const weeklyHours = parseFloat(hoursPerWeek) || 38;
+                        const weeklyHours = Math.max(parseFloat(hoursPerWeek) || 38, 1);
                         annualSalary = annualSalary * (weeklyHours / 38);
                     }
                     
                     // Add overtime
-                    const overtime = parseFloat(overtimeHours) || 0;
-                    const rate = parseFloat(overtimeRate) || 1.5;
+                    const overtime = Math.max(parseFloat(overtimeHours) || 0, 0);
+                    const rate = Math.max(parseFloat(overtimeRate) || 1.5, 0);
                     if (overtime > 0) {
-                        const hourlyRate = annualSalary / 52 / (parseFloat(hoursPerWeek) || 38);
+                        const weeklyHoursForOvertime = Math.max(parseFloat(hoursPerWeek) || 38, 1); // Prevent division by zero
+                        const hourlyRate = annualSalary / 52 / weeklyHoursForOvertime;
                         const overtimeAnnual = hourlyRate * rate * overtime * 52;
                         annualSalary += overtimeAnnual;
                     }
                     
-                    const bonus = parseFloat(bonusPay) || 0;
-                    const hecsAmount = hasHECS ? parseFloat(hecsDebt) || 0 : 0;
+                    // Final validation
+                    if (isNaN(annualSalary) || annualSalary <= 0) {
+                        setResult(null);
+                        return;
+                    }
+                    
+                    const bonus = Math.max(parseFloat(bonusPay) || 0, 0);
+                    const hecsAmount = hasHECS ? Math.max(parseFloat(hecsDebt) || 0, 0) : 0;
                     
                     setResult(calculateNetPay(annualSalary, { hecsDebt: hecsAmount, bonus }));
+                } else {
+                    setResult(null);
                 }
             }, [salary, payFrequency, includesSuper, bonusPay, hasHECS, hecsDebt, isPartTime, hoursPerWeek, overtimeHours, overtimeRate]);
 
@@ -497,13 +989,22 @@
                                         </select>
                                     </div>
                                     <div className="flex gap-2 sm:gap-3 flex-wrap">
-                                        <button className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors">
+                                        <button 
+                                            onClick={handleDownload}
+                                            className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors"
+                                        >
                                             <span>📥</span> <span className="hidden sm:inline">Download</span>
                                         </button>
-                                        <button className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors">
+                                        <button 
+                                            onClick={handleShare}
+                                            className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors"
+                                        >
                                             <span>🔗</span> <span className="hidden sm:inline">Share</span>
                                         </button>
-                                        <button className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors">
+                                        <button 
+                                            onClick={() => window.print()}
+                                            className="px-3 sm:px-5 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 flex items-center gap-1 sm:gap-2 transition-colors"
+                                        >
                                             <span>🖨️</span> <span className="hidden sm:inline">Print</span>
                                         </button>
                                     </div>
@@ -682,10 +1183,10 @@
                                     <p className="text-sm text-gray-700 leading-relaxed">
                                         Your <span className="font-semibold">Adjusted Taxable Income</span> is ${result.grossAnnual.toLocaleString('en-AU', {maximumFractionDigits: 0})}.
                                     </p>
-                                    {result.grossAnnual > 97000 && (
+                                    {result.grossAnnual > 93000 && (
                                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                                             <p className="text-sm text-amber-800 leading-relaxed">
-                                                ⚠️ You may be liable to a Medicare surcharge of ${((result.grossAnnual - 97000) * 0.01).toLocaleString('en-AU', {maximumFractionDigits: 0})} per year if you do not have suitable private health insurance. This is based on an adjusted taxable income of ${result.grossAnnual.toLocaleString('en-AU', {maximumFractionDigits: 0})}.
+                                                ⚠️ You may be liable to a Medicare Levy Surcharge of ${((result.grossAnnual - 93000) * 0.01).toLocaleString('en-AU', {maximumFractionDigits: 0})} per year if you do not have suitable private health insurance. This is based on an adjusted taxable income of ${result.grossAnnual.toLocaleString('en-AU', {maximumFractionDigits: 0})}. (2024-25 threshold: $93,000 for singles)
                                             </p>
                                         </div>
                                     )}
@@ -724,21 +1225,38 @@
                 const years = parseFloat(yearsService);
                 const salary = parseFloat(annualSalary);
                 const personAge = parseInt(age);
-                const leaveWeeks = parseFloat(annualLeaveWeeks);
+                const leaveWeeks = Math.max(parseFloat(annualLeaveWeeks) || 0, 0);
+
+                // Validate inputs
+                if (isNaN(years) || years < 0 || isNaN(salary) || salary <= 0 || isNaN(personAge) || personAge < 0) {
+                    setResult(null);
+                    return;
+                }
 
                 const weeklySalary = salary / 52;
                 
-                // Redundancy Pay: 4 weeks per year, capped at 16 weeks (NES standard)
-                const redundancyWeeks = Math.min(4 * years, 16);
+                // Redundancy Pay: Fair Work NES standard scale
+                let redundancyWeeks = 0;
+                if (years >= 1 && years < 2) redundancyWeeks = 4;
+                else if (years >= 2 && years < 3) redundancyWeeks = 6;
+                else if (years >= 3 && years < 4) redundancyWeeks = 7;
+                else if (years >= 4 && years < 5) redundancyWeeks = 8;
+                else if (years >= 5 && years < 6) redundancyWeeks = 10;
+                else if (years >= 6 && years < 7) redundancyWeeks = 11;
+                else if (years >= 7 && years < 8) redundancyWeeks = 13;
+                else if (years >= 8 && years < 9) redundancyWeeks = 14;
+                else if (years >= 9 && years < 10) redundancyWeeks = 16;
+                else if (years >= 10) redundancyWeeks = 12; // Reduced from 16 for 10+ years
                 const redundancyPay = weeklySalary * redundancyWeeks;
                 
-                // Notice Period (NES standard)
+                // Notice Period (NES standard - Fair Work)
                 let noticeWeeks;
                 if (years < 1) noticeWeeks = 1;
                 else if (years < 3) noticeWeeks = 2;
                 else if (years < 5) noticeWeeks = 3;
-                else noticeWeeks = 4;
-                if (personAge >= 45) noticeWeeks += 1;
+                else if (years >= 5) noticeWeeks = 4;
+                // Additional week for employees 45+ with at least 2 years service
+                if (personAge >= 45 && years >= 2) noticeWeeks += 1;
                 
                 const noticePay = weeklySalary * noticeWeeks;
                 const annualLeavePay = weeklySalary * leaveWeeks;
@@ -749,8 +1267,11 @@
                 
                 const totalPayout = redundancyPay + noticePay + annualLeavePay + longServicePay;
                 
-                // Tax-free limit: $12,157 + $6,078 per year
-                const taxFreeLimit = 12157 + (6078 * years);
+                // Tax-free limit: $12,157 + $6,078 per year (2024-25 ATO indexed amounts)
+                // Note: These amounts are indexed annually on 1 July
+                const taxFreeBase = 12157;
+                const taxFreePerYear = 6078;
+                const taxFreeLimit = taxFreeBase + (taxFreePerYear * years);
                 const taxFreeComponent = Math.min(taxFreeLimit, redundancyPay);
                 const taxableRedundancy = Math.max(0, redundancyPay - taxFreeLimit);
                 const otherTaxable = noticePay + annualLeavePay + longServicePay;
@@ -770,7 +1291,11 @@
             };
 
             useEffect(() => {
-                if (yearsService && annualSalary) calculateRedundancy();
+                if (yearsService && annualSalary && !isNaN(parseFloat(yearsService)) && !isNaN(parseFloat(annualSalary))) {
+                    calculateRedundancy();
+                } else {
+                    setResult(null);
+                }
             }, [yearsService, annualSalary, age, annualLeaveWeeks]);
 
             return (
@@ -825,7 +1350,7 @@
                                         min="18"
                                         max="100"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">45+ gets extra week of notice</p>
+                                    <p className="text-xs text-gray-500 mt-1">45+ with 2+ years service gets extra week</p>
                                 </div>
 
                                 <div>
@@ -869,7 +1394,7 @@
                                         <div className="flex justify-between items-center pb-3 border-b border-gray-100">
                                             <div>
                                                 <span className="text-gray-900 font-medium">Redundancy Pay</span>
-                                                <p className="text-xs text-gray-500">{result.redundancyWeeks} weeks{result.redundancyWeeks >= 16 ? ' (NES cap)' : ''}</p>
+                                                <p className="text-xs text-gray-500">{result.redundancyWeeks} weeks{result.redundancyWeeks === 12 ? ' (10+ years rate)' : result.redundancyWeeks === 16 ? ' (9-10 years)' : ''}</p>
                                             </div>
                                             <span className="font-semibold text-gray-900">${result.redundancyPay.toLocaleString('en-AU', {maximumFractionDigits: 0})}</span>
                                         </div>
@@ -930,11 +1455,11 @@
                                     <ul className="space-y-2 text-sm text-blue-800">
                                         <li className="flex items-start">
                                             <span className="mr-2">•</span>
-                                            <span><strong>4 weeks per year</strong> of service, capped at 16 weeks (NES)</span>
+                                            <span><strong>Fair Work scale:</strong> 4-16 weeks based on service (1-9 years), <strong>12 weeks for 10+ years</strong> (NES)</span>
                                         </li>
                                         <li className="flex items-start">
                                             <span className="mr-2">•</span>
-                                            <span><strong>Notice:</strong> 1-4 weeks based on service length, +1 if over 45</span>
+                                            <span><strong>Notice:</strong> 1-4 weeks based on service length, +1 if 45+ with 2+ years service</span>
                                         </li>
                                         <li className="flex items-start">
                                             <span className="mr-2">•</span>
@@ -983,21 +1508,34 @@
             useEffect(() => {
                 if (salary && sacrificeAmount) {
                     const grossAnnual = parseFloat(salary);
-                    const sacrifice = parseFloat(sacrificeAmount);
+                    const sacrificeInput = parseFloat(sacrificeAmount);
+                    
+                    // Validate inputs
+                    if (isNaN(grossAnnual) || grossAnnual <= 0 || isNaN(sacrificeInput) || sacrificeInput < 0) {
+                        setResult(null);
+                        return;
+                    }
+                    
+                    const sacrifice = Math.min(sacrificeInput, grossAnnual); // Cap sacrifice at salary amount
+                    
+                    if (sacrifice <= 0) {
+                        setResult(null);
+                        return;
+                    }
                     
                     const beforeSacrifice = calculateNetPay(grossAnnual);
                     const afterSacrifice = calculateNetPay(grossAnnual - sacrifice);
                     
                     // Super contribution from salary sacrifice
                     const superContribution = sacrifice * 0.85; // 15% contributions tax
-                    const savings = beforeSacrifice.netAnnual - afterSacrifice.netAnnual;
-                    const effectiveSavings = superContribution - savings;
+                    const reductionInTakeHome = beforeSacrifice.netAnnual - afterSacrifice.netAnnual;
+                    const effectiveSavings = superContribution - reductionInTakeHome;
 
                     setResult({
                         beforeSacrifice,
                         afterSacrifice,
                         superContribution,
-                        savings,
+                        savings: reductionInTakeHome,
                         effectiveSavings
                     });
                 }
@@ -1122,12 +1660,25 @@
             useEffect(() => {
                 if (currentSalary && raiseAmount) {
                     const current = parseFloat(currentSalary);
-                    let newSalary;
+                    const raise = parseFloat(raiseAmount);
                     
+                    // Validate inputs
+                    if (isNaN(current) || current <= 0 || isNaN(raise) || raise < 0) {
+                        setResult(null);
+                        return;
+                    }
+                    
+                    let newSalary;
                     if (raiseType === 'amount') {
-                        newSalary = current + parseFloat(raiseAmount);
+                        newSalary = current + raise;
                     } else {
-                        newSalary = current * (1 + parseFloat(raiseAmount) / 100);
+                        newSalary = current * (1 + raise / 100);
+                    }
+                    
+                    // Validate new salary
+                    if (isNaN(newSalary) || newSalary <= 0) {
+                        setResult(null);
+                        return;
                     }
 
                     const beforeRaise = calculateNetPay(current);
@@ -1136,7 +1687,8 @@
                     const grossIncrease = newSalary - current;
                     const netIncrease = afterRaise.netAnnual - beforeRaise.netAnnual;
                     const taxOnRaise = grossIncrease - netIncrease;
-                    const takeHomePercentage = (netIncrease / grossIncrease) * 100;
+                    // Prevent division by zero
+                    const takeHomePercentage = grossIncrease > 0 ? (netIncrease / grossIncrease) * 100 : 0;
 
                     setResult({
                         beforeRaise,
@@ -1333,13 +1885,21 @@
                 const bonus1 = parseFloat(offer1.bonus) || 0;
                 const bonus2 = parseFloat(offer2.bonus) || 0;
                 
+                // Validate inputs
+                if (isNaN(salary1) || salary1 <= 0 || isNaN(salary2) || salary2 <= 0) {
+                    setResults(null);
+                    return;
+                }
+                
                 // Calculate net pay for base salary
                 const calc1 = calculateNetPay(salary1);
                 const calc2 = calculateNetPay(salary2);
                 
                 // Calculate tax on bonus (bonus is taxed at marginal rate)
-                const bonus1AfterTax = bonus1 > 0 ? bonus1 - (calculateTax(salary1 + bonus1) - calculateTax(salary1)) - (bonus1 * MEDICARE_LEVY) : 0;
-                const bonus2AfterTax = bonus2 > 0 ? bonus2 - (calculateTax(salary2 + bonus2) - calculateTax(salary2)) - (bonus2 * MEDICARE_LEVY) : 0;
+                const medicare1 = calculateMedicareLevy(salary1);
+                const medicare2 = calculateMedicareLevy(salary2);
+                const bonus1AfterTax = bonus1 > 0 ? bonus1 - (calculateTax(salary1 + bonus1) - calculateTax(salary1)) - (calculateMedicareLevy(salary1 + bonus1) - medicare1) : 0;
+                const bonus2AfterTax = bonus2 > 0 ? bonus2 - (calculateTax(salary2 + bonus2) - calculateTax(salary2)) - (calculateMedicareLevy(salary2 + bonus2) - medicare2) : 0;
                 
                 // Calculate super contributions
                 const super1 = salary1 * (parseFloat(offer1.super) / 100);
@@ -1350,8 +1910,9 @@
                 const totalTakeHome2 = calc2.netAnnual + bonus2AfterTax;
                 
                 // Commute cost estimation (only if enabled)
-                const commuteCost1 = includeCommute ? parseFloat(offer1.commute) * 2 * 0.85 * 230 : 0;
-                const commuteCost2 = includeCommute ? parseFloat(offer2.commute) * 2 * 0.85 * 230 : 0;
+                // 2 trips per day * $0.85/km * 260 working days per year
+                const commuteCost1 = includeCommute ? parseFloat(offer1.commute) * 2 * 0.85 * 260 : 0;
+                const commuteCost2 = includeCommute ? parseFloat(offer2.commute) * 2 * 0.85 * 260 : 0;
                 
                 // Total package value (take-home + super - commute costs if enabled)
                 const totalValue1 = totalTakeHome1 + super1 - commuteCost1;
@@ -1668,55 +2229,57 @@
             const [activityHours, setActivityHours] = useState('40');
             const [result, setResult] = useState(null);
 
-            // Childcare subsidy rates based on Australian Government 2024-25
-            const calculateSubsidy = () => {
-                const income = parseFloat(familyIncome);
-                const hours = parseFloat(hoursPerWeek);
-                const activity = parseFloat(activityHours);
-                const children = parseInt(numChildren);
-
-                // Subsidy percentage based on income
-                let subsidyPercent = 0;
-                if (income <= 80000) {
-                    subsidyPercent = 90;
-                } else if (income <= 530000) {
-                    subsidyPercent = 90 - ((income - 80000) / 5000);
-                    subsidyPercent = Math.max(0, subsidyPercent);
-                } else {
-                    subsidyPercent = 0;
-                }
-
-                // Hourly rate caps (2024-25)
-                const hourlyCap = careType === 'centre' ? 14.19 : careType === 'family' ? 13.73 : 12.74;
-                
-                // Calculate maximum hours (lesser of work hours or care hours)
-                const maxHours = Math.min(hours, activity);
-                
-                // Calculate subsidy per week
-                const subsidyPerWeek = (hourlyCap * subsidyPercent / 100) * maxHours;
-                const subsidyPerYear = subsidyPerWeek * 52;
-                const subsidyPerFortnight = subsidyPerWeek * 2;
-
-                // Estimate out of pocket (assuming $12/hour average)
-                const avgCostPerWeek = 12 * maxHours;
-                const outOfPocketWeek = avgCostPerWeek - subsidyPerWeek;
-                const outOfPocketYear = outOfPocketWeek * 52;
-
-                setResult({
-                    subsidyPercent: subsidyPercent.toFixed(1),
-                    subsidyPerWeek,
-                    subsidyPerFortnight,
-                    subsidyPerYear,
-                    hourlyCap,
-                    maxHours,
-                    outOfPocketWeek,
-                    outOfPocketYear
-                });
-            };
-
             useEffect(() => {
+                // Childcare subsidy rates based on Australian Government 2024-25
                 if (familyIncome && hoursPerWeek && activityHours) {
-                    calculateSubsidy();
+                    const income = parseFloat(familyIncome);
+                    const hours = parseFloat(hoursPerWeek);
+                    const activity = parseFloat(activityHours);
+                    const children = parseInt(numChildren);
+                    
+                    // Validate inputs
+                    if (isNaN(income) || income < 0 || isNaN(hours) || hours < 0 || isNaN(activity) || activity < 0 || isNaN(children) || children < 1) {
+                        setResult(null);
+                        return;
+                    }
+
+                    // Subsidy percentage based on income
+                    let subsidyPercent = 0;
+                    if (income <= 80000) {
+                        subsidyPercent = 90;
+                    } else if (income <= 530000) {
+                        subsidyPercent = 90 - ((income - 80000) / 5000);
+                        subsidyPercent = Math.max(0, subsidyPercent);
+                    } else {
+                        subsidyPercent = 0;
+                    }
+
+                    // Hourly rate caps (2024-25)
+                    const hourlyCap = careType === 'centre' ? 14.19 : careType === 'family' ? 13.73 : 12.74;
+                    
+                    // Calculate maximum hours (lesser of work hours or care hours)
+                    const maxHours = Math.min(hours, activity);
+                    
+                    // Calculate subsidy per week
+                    const subsidyPerWeek = (hourlyCap * subsidyPercent / 100) * maxHours;
+                    const subsidyPerYear = subsidyPerWeek * 52;
+                    const subsidyPerFortnight = subsidyPerWeek * 2;
+
+                    // Estimate out of pocket (assuming $12/hour average)
+                    const avgCostPerWeek = 12 * maxHours;
+                    const outOfPocketWeek = avgCostPerWeek - subsidyPerWeek;
+                    const outOfPocketYear = outOfPocketWeek * 52;
+
+                    setResult({
+                        subsidyPercent: subsidyPercent.toFixed(1),
+                        subsidyPerWeek,
+                        subsidyPerFortnight,
+                        subsidyPerYear,
+                        hourlyCap,
+                        maxHours,
+                        outOfPocketWeek,
+                        outOfPocketYear
+                    });
                 }
             }, [familyIncome, numChildren, hoursPerWeek, careType, activityHours]);
 
@@ -1951,9 +2514,56 @@
                     <p>Tax rates based on ATO 2024-25 financial year | HECS using 2025-26 marginal system</p>
                     <p class="mt-2">Made with ❤️ for Australian workers</p>
                 </div>
+                
+                <div class="mt-6 pt-6 border-t border-gray-300">
+                    <div class="flex flex-wrap justify-center gap-4 text-sm">
+                        <a 
+                            href="#" 
+                            onclick="window.dispatchEvent(new CustomEvent('openPrivacy')); return false;"
+                            class="text-gray-600 hover:text-gray-900 underline cursor-pointer"
+                        >
+                            Privacy Policy
+                        </a>
+                        <span class="text-gray-400">•</span>
+                        <a 
+                            href="#" 
+                            onclick="window.dispatchEvent(new CustomEvent('openTerms')); return false;"
+                            class="text-gray-600 hover:text-gray-900 underline cursor-pointer"
+                        >
+                            Terms of Service
+                        </a>
+                        <span class="text-gray-400">•</span>
+                        <a 
+                            href="#" 
+                            onclick="window.dispatchEvent(new CustomEvent('openContact')); return false;"
+                            class="text-gray-600 hover:text-gray-900 underline cursor-pointer"
+                        >
+                            Contact
+                        </a>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-4 text-center">
+                        © 2025 Australia Pay Calculator. All rights reserved.
+                    </p>
+                </div>
             </div>
         </div>
     </footer>
+    
+    <script>
+        // Bridge between React and vanilla JS footer links
+        window.addEventListener('openPrivacy', () => {
+            const event = new Event('react-open-privacy');
+            window.dispatchEvent(event);
+        });
+        window.addEventListener('openTerms', () => {
+            const event = new Event('react-open-terms');
+            window.dispatchEvent(event);
+        });
+        window.addEventListener('openContact', () => {
+            const event = new Event('react-open-contact');
+            window.dispatchEvent(event);
+        });
+    </script>
 </body>
 
 </html>
